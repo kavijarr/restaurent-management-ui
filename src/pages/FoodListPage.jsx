@@ -2,34 +2,83 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import QuantityModal from "./QuantityModal";
 import { useLocation, useNavigate } from "react-router-dom";
+import Swal from "sweetalert2";
 
 const FoodListPage = () => {
   const [foods, setFoods] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [selectedFood, setSelectedFood] = useState(null);
   const [cart, setCart] = useState([]);
-  const [orderId, setOrderId] = useState(null); // store active order ID
+  const [orderId, setOrderId] = useState(localStorage.getItem("orderId") || null);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Extract qrCode from URL
   const queryParams = new URLSearchParams(location.search);
   const qrCode = queryParams.get("qrCode");
 
   useEffect(() => {
     if (!qrCode) {
-      alert("Invalid or missing QR Code!");
-      navigate("/"); // Go to landing if QR missing
+      Swal.fire("QR Code Missing", "Invalid or missing QR Code!", "warning").then(() => {
+        navigate("/");
+      });
       return;
     }
 
-    // Fetch foods from backend
     axios.get("http://localhost:8080/api/food").then((res) => {
       setFoods(res.data);
     });
+
+    const savedCart = localStorage.getItem("cart");
+    if (savedCart) {
+      setCart(JSON.parse(savedCart));
+    }
+
+    const savedOrderId = localStorage.getItem("orderId");
+    const savedQr = localStorage.getItem("qrCode");
+
+    if (savedOrderId && savedQr === qrCode) {
+      axios.get("http://localhost:8080/api/order/is-active", {
+        params: { orderId: savedOrderId },
+      }).then((res) => {
+        if (!res.data) {
+          localStorage.removeItem("orderId");
+          localStorage.removeItem("cart");
+          localStorage.removeItem("qrCode");
+          setOrderId(null);
+          setCart([]);
+        }
+      }).catch((err) => {
+        console.error("Order check failed", err);
+      });
+    }
   }, [qrCode, navigate]);
 
-  // Group foods by category
+  useEffect(() => {
+    if (!orderId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get("http://localhost:8080/api/order/is-active", {
+          params: { orderId },
+        });
+
+        if (!res.data) {
+          Swal.fire("Order Complete", "\u2705 Your order has been completed!", "success");
+          localStorage.removeItem("orderId");
+          localStorage.removeItem("qrCode");
+          localStorage.removeItem("cart");
+          setOrderId(null);
+          setCart([]);
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error("Error checking order status:", err);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [orderId]);
+
   const groupedFoods = foods.reduce((groups, food) => {
     if (!groups[food.category]) groups[food.category] = [];
     groups[food.category].push(food);
@@ -43,28 +92,41 @@ const FoodListPage = () => {
 
   const handleQuantityConfirm = (qty) => {
     const existing = cart.find((item) => item.food.id === selectedFood.id);
+    let updatedCart;
     if (existing) {
-      setCart((prev) =>
-        prev.map((item) =>
-          item.food.id === selectedFood.id
-            ? { ...item, qty: item.qty + qty }
-            : item
-        )
+      updatedCart = cart.map((item) =>
+        item.food.id === selectedFood.id
+          ? { ...item, qty: item.qty + qty }
+          : item
       );
     } else {
-      setCart((prev) => [...prev, { food: selectedFood, qty }]);
+      updatedCart = [...cart, { food: selectedFood, qty }];
     }
+    setCart(updatedCart);
+    localStorage.setItem("cart", JSON.stringify(updatedCart));
     setShowModal(false);
   };
 
   const handlePlaceOrder = async () => {
     if (!qrCode) {
-      alert("Missing QR code");
+      Swal.fire("QR Code Missing", "Missing QR code", "warning");
+      return;
+    }
+
+    const existingOrderId = localStorage.getItem("orderId");
+    const existingQrCode = localStorage.getItem("qrCode");
+
+    if (existingOrderId && existingQrCode && existingQrCode !== qrCode) {
+      Swal.fire("Order Conflict", "Another order is already in progress on this device. Please complete it first.", "error");
+      return;
+    }
+
+    if (existingOrderId && existingQrCode === qrCode) {
+      Swal.fire("Order Already Active", "You already have an active order for this table.", "info");
       return;
     }
 
     try {
-      // Start or get existing active order for this table
       const startRes = await axios.post(
         "http://localhost:8080/api/order/start",
         null,
@@ -73,8 +135,9 @@ const FoodListPage = () => {
 
       const currentOrderId = startRes.data.id;
       setOrderId(currentOrderId);
+      localStorage.setItem("orderId", currentOrderId);
+      localStorage.setItem("qrCode", qrCode);
 
-      // Add all cart items to this active order
       for (const item of cart) {
         await axios.post(
           "http://localhost:8080/api/order/add",
@@ -89,11 +152,12 @@ const FoodListPage = () => {
         );
       }
 
-      alert("Order placed successfully!");
+      await Swal.fire("Success", "\u2705 Order placed successfully!", "success");
       setCart([]);
+      localStorage.removeItem("cart");
     } catch (err) {
       console.error(err);
-      alert("Failed to place order.");
+      Swal.fire("Error", "\u274C Failed to place order.", "error");
     }
   };
 
@@ -133,19 +197,83 @@ const FoodListPage = () => {
         </div>
       ))}
 
-      {cart.length > 0 && (
-        <div className="fixed-bottom bg-light p-3 border-top">
-          <div className="container d-flex justify-content-between align-items-center">
-            <span>
-              🛒 {cart.length} item(s) in cart – Total: Rs.{" "}
-              {cart.reduce((total, item) => total + item.food.price * item.qty, 0)}
-            </span>
-            <button className="btn btn-success" onClick={handlePlaceOrder}>
-              Place Order
+      <button
+  className="btn btn-warning position-fixed bottom-0 start-0 m-4 shadow-lg d-flex align-items-center"
+  style={{ fontWeight: "600", fontSize: "1.25rem", borderRadius: "50px", padding: "10px 20px" }}
+  data-bs-toggle="modal"
+  data-bs-target="#cartModal"
+>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    fill="currentColor"
+    className="bi bi-cart3 me-2"
+    viewBox="0 0 16 16"
+  >
+    <path d="M0 1.5A.5.5 0 0 1 .5 1h1a.5.5 0 0 1 .485.379L2.89 5H14.5a.5.5 0 0 1 .491.592l-1.5 7A.5.5 0 0 1 13 13H4a.5.5 0 0 1-.491-.408L1.01 2H.5a.5.5 0 0 1-.5-.5zm3.14 4l1.25 5.5h7.22l1.25-5.5H3.14zM5.5 16a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
+  </svg>
+  View Cart ({cart.length})
+</button>
+
+
+      <div className="modal fade" id="cartModal" tabIndex="-1" aria-hidden="true">
+        <div className="modal-dialog modal-dialog-scrollable">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Cart</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div className="modal-body">
+  {cart.length === 0 ? (
+    <p>No items in cart.</p>
+  ) : (
+    <>
+      <ul className="list-group mb-3">
+        {cart.map((item, index) => (
+          <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              {item.food.name} x {item.qty} <br />
+              <small>Rs. {item.food.price * item.qty}</small>
+            </div>
+            <button
+              className="btn btn-sm btn-danger"
+              onClick={() => {
+                const updatedCart = cart.filter((_, i) => i !== index);
+                setCart(updatedCart);
+                localStorage.setItem("cart", JSON.stringify(updatedCart));
+              }}
+            >
+              Remove
             </button>
+          </li>
+        ))}
+      </ul>
+      <div className="d-flex justify-content-between fw-bold">
+        <span>Total:</span>
+        <span>
+          Rs.{" "}
+          {cart.reduce((total, item) => total + item.food.price * item.qty, 0)}
+        </span>
+      </div>
+    </>
+  )}
+</div>
+
+
+            <div className="modal-footer">
+              <button
+                className="btn btn-success w-100"
+                data-bs-dismiss="modal"
+                onClick={handlePlaceOrder}
+                disabled={cart.length === 0}
+              >
+                Place Order
+              </button>
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
       <QuantityModal
         show={showModal}
