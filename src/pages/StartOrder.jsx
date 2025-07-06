@@ -12,10 +12,10 @@ const StartPage = () => {
       return;
     }
 
-    // Save to session/localStorage (optional)
+
     sessionStorage.setItem("qrCode", qrCode);
 
-    // Navigate to food list page
+ 
     navigate(`/foods?qrCode=${qrCode}`);
   };
 

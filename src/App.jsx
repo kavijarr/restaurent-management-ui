@@ -7,6 +7,7 @@ import StartOrder from './pages/StartOrder'
 import FoodListPage from './pages/FoodListPage'
 import AddFoodPage from './pages/AddFoodPage'
 import AdminPage from './pages/AdminPage'
+import ThankYouPage from './pages/ThankYouPage'
 
 const App = () => {
   return (
@@ -15,6 +16,7 @@ const App = () => {
       <Route path="/foods" element={<FoodListPage />} />
       <Route path="/add-foods" element={<AddFoodPage />} />
       <Route path="/admin" element={<AdminPage />} />
+      <Route path="/thank-you" element={<ThankYouPage />} />
     </Routes>
   );
 }

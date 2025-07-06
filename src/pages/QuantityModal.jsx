@@ -10,6 +10,9 @@ export default function QuantityModal({ show, onClose, onConfirm }) {
     }
   }, [show]);
 
+  const increment = () => setQuantity((q) => q + 1);
+  const decrement = () => setQuantity((q) => (q > 1 ? q - 1 : 1));
+
   if (!show) return null;
 
   return (
@@ -39,14 +42,33 @@ export default function QuantityModal({ show, onClose, onConfirm }) {
                 onClick={onClose}
               ></button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body d-flex align-items-center">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={decrement}
+                style={{ width: "40px", height: "40px" }}
+              >
+                -
+              </button>
               <input
                 type="number"
-                className="form-control"
+                className="form-control mx-2 text-center"
                 min="1"
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                onChange={(e) =>
+                  setQuantity(Math.max(1, Number(e.target.value) || 1))
+                }
+                style={{ maxWidth: "80px" }}
               />
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={increment}
+                style={{ width: "40px", height: "40px" }}
+              >
+                +
+              </button>
             </div>
             <div className="modal-footer">
               <button

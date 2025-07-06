@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import QuantityModal from "./QuantityModal";
+import OrderDetailsModal from "./OrderDetailsModal"; // <-- import your modal here
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 
@@ -10,6 +11,9 @@ const FoodListPage = () => {
   const [selectedFood, setSelectedFood] = useState(null);
   const [cart, setCart] = useState([]);
   const [orderId, setOrderId] = useState(localStorage.getItem("orderId") || null);
+  const [orderDetailsModalShow, setOrderDetailsModalShow] = useState(false);
+  const [currentOrder, setCurrentOrder] = useState(null);
+
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -24,7 +28,7 @@ const FoodListPage = () => {
       return;
     }
 
-    axios.get("http://localhost:8080/api/food").then((res) => {
+    axios.get("http://192.168.1.112:8080/api/food").then((res) => {
       setFoods(res.data);
     });
 
@@ -37,7 +41,7 @@ const FoodListPage = () => {
     const savedQr = localStorage.getItem("qrCode");
 
     if (savedOrderId && savedQr === qrCode) {
-      axios.get("http://localhost:8080/api/order/is-active", {
+      axios.get("http://192.168.1.112:8080/api/order/is-active", {
         params: { orderId: savedOrderId },
       }).then((res) => {
         if (!res.data) {
@@ -58,17 +62,22 @@ const FoodListPage = () => {
 
     const interval = setInterval(async () => {
       try {
-        const res = await axios.get("http://localhost:8080/api/order/is-active", {
+        const res = await axios.get("http://192.168.1.112:8080/api/order/is-active", {
           params: { orderId },
         });
 
         if (!res.data) {
-          Swal.fire("Order Complete", "\u2705 Your order has been completed!", "success");
-          localStorage.removeItem("orderId");
-          localStorage.removeItem("qrCode");
-          localStorage.removeItem("cart");
-          setOrderId(null);
-          setCart([]);
+          Swal.fire("Order Complete", "\u2705 Your order has been completed!", "success").then(() => {
+            // Clear all storage and reset states
+            localStorage.removeItem("orderId");
+            localStorage.removeItem("qrCode");
+            localStorage.removeItem("cart");
+            setOrderId(null);
+            setCart([]);
+
+            // Redirect to thank you page
+            navigate("/thank-you");
+          });
           clearInterval(interval);
         }
       } catch (err) {
@@ -77,7 +86,7 @@ const FoodListPage = () => {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [orderId]);
+  }, [orderId, navigate]);
 
   const groupedFoods = foods.reduce((groups, food) => {
     if (!groups[food.category]) groups[food.category] = [];
@@ -128,7 +137,7 @@ const FoodListPage = () => {
 
     try {
       const startRes = await axios.post(
-        "http://localhost:8080/api/order/start",
+        "http://192.168.1.112:8080/api/order/start",
         null,
         { params: { qrCode } }
       );
@@ -140,7 +149,7 @@ const FoodListPage = () => {
 
       for (const item of cart) {
         await axios.post(
-          "http://localhost:8080/api/order/add",
+          "http://192.168.1.112:8080/api/order/add",
           null,
           {
             params: {
@@ -153,11 +162,32 @@ const FoodListPage = () => {
       }
 
       await Swal.fire("Success", "\u2705 Order placed successfully!", "success");
+
+      // Clear cart only, keep orderId so polling can check status
       setCart([]);
       localStorage.removeItem("cart");
+
+      // Do NOT redirect here
+
     } catch (err) {
       console.error(err);
       Swal.fire("Error", "\u274C Failed to place order.", "error");
+    }
+  };
+
+  // New handler to fetch and show order details
+  const handleViewOrder = async () => {
+    if (!orderId) {
+      Swal.fire("No active order", "You have not placed any order yet.", "info");
+      return;
+    }
+    try {
+      const res = await axios.get(`http://192.168.1.112:8080/api/order/${orderId}`);
+      setCurrentOrder(res.data);
+      setOrderDetailsModalShow(true);
+    } catch (error) {
+      console.error("Failed to fetch order details:", error);
+      Swal.fire("Error", "Failed to load order details", "error");
     }
   };
 
@@ -173,7 +203,7 @@ const FoodListPage = () => {
               <div key={food.id} className="col-12 col-md-6 col-lg-4">
                 <div className="card h-100">
                   <img
-                    src={`http://localhost:8080${food.imageUrl}`}
+                    src={`http://192.168.1.112:8080${food.imageUrl}`}
                     className="card-img-top"
                     alt={food.name}
                     style={{ height: "200px", objectFit: "cover" }}
@@ -198,24 +228,34 @@ const FoodListPage = () => {
       ))}
 
       <button
-  className="btn btn-warning position-fixed bottom-0 start-0 m-4 shadow-lg d-flex align-items-center"
-  style={{ fontWeight: "600", fontSize: "1.25rem", borderRadius: "50px", padding: "10px 20px" }}
-  data-bs-toggle="modal"
-  data-bs-target="#cartModal"
->
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    fill="currentColor"
-    className="bi bi-cart3 me-2"
-    viewBox="0 0 16 16"
-  >
-    <path d="M0 1.5A.5.5 0 0 1 .5 1h1a.5.5 0 0 1 .485.379L2.89 5H14.5a.5.5 0 0 1 .491.592l-1.5 7A.5.5 0 0 1 13 13H4a.5.5 0 0 1-.491-.408L1.01 2H.5a.5.5 0 0 1-.5-.5zm3.14 4l1.25 5.5h7.22l1.25-5.5H3.14zM5.5 16a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
-  </svg>
-  View Cart ({cart.length})
-</button>
+        className="btn btn-warning position-fixed bottom-0 start-0 m-4 shadow-lg d-flex align-items-center"
+        style={{ fontWeight: "600", fontSize: "1.25rem", borderRadius: "50px", padding: "10px 20px" }}
+        data-bs-toggle="modal"
+        data-bs-target="#cartModal"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          fill="currentColor"
+          className="bi bi-cart3 me-2"
+          viewBox="0 0 16 16"
+        >
+          <path d="M0 1.5A.5.5 0 0 1 .5 1h1a.5.5 0 0 1 .485.379L2.89 5H14.5a.5.5 0 0 1 .491.592l-1.5 7A.5.5 0 0 1 13 13H4a.5.5 0 0 1-.491-.408L1.01 2H.5a.5.5 0 0 1-.5-.5zm3.14 4l1.25 5.5h7.22l1.25-5.5H3.14zM5.5 16a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
+        </svg>
+        View Cart ({cart.length})
+      </button>
 
+      {/* New View Order button */}
+      {orderId && (
+        <button
+          className="btn btn-info position-fixed bottom-0 end-0 m-4 shadow-lg"
+          style={{ fontWeight: "600", fontSize: "1.25rem", borderRadius: "50px", padding: "10px 20px" }}
+          onClick={handleViewOrder}
+        >
+          View Order
+        </button>
+      )}
 
       <div className="modal fade" id="cartModal" tabIndex="-1" aria-hidden="true">
         <div className="modal-dialog modal-dialog-scrollable">
@@ -225,42 +265,68 @@ const FoodListPage = () => {
               <button type="button" className="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div className="modal-body">
-  {cart.length === 0 ? (
-    <p>No items in cart.</p>
-  ) : (
-    <>
-      <ul className="list-group mb-3">
-        {cart.map((item, index) => (
-          <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
-            <div>
-              {item.food.name} x {item.qty} <br />
-              <small>Rs. {item.food.price * item.qty}</small>
+              {cart.length === 0 ? (
+                <p>No items in cart.</p>
+              ) : (
+                <>
+                  <ul className="list-group mb-3">
+                    {cart.map((item, index) => (
+                      <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                          {item.food.name} &nbsp;
+                          <button
+                            className="btn btn-sm btn-outline-secondary me-1"
+                            onClick={() => {
+                              const updatedCart = cart
+                                .map((it, i) =>
+                                  i === index ? { ...it, qty: Math.max(it.qty - 1, 0) } : it
+                                )
+                                .filter(it => it.qty > 0);
+                              setCart(updatedCart);
+                              localStorage.setItem("cart", JSON.stringify(updatedCart));
+                            }}
+                          >
+                            -
+                          </button>
+                          <span>{item.qty}</span>
+                          <button
+                            className="btn btn-sm btn-outline-secondary ms-1"
+                            onClick={() => {
+                              const updatedCart = cart.map((it, i) =>
+                                i === index ? { ...it, qty: it.qty + 1 } : it
+                              );
+                              setCart(updatedCart);
+                              localStorage.setItem("cart", JSON.stringify(updatedCart));
+                            }}
+                          >
+                            +
+                          </button>
+                          <br />
+                          <small>Rs. {item.food.price * item.qty}</small>
+                        </div>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => {
+                            const updatedCart = cart.filter((_, i) => i !== index);
+                            setCart(updatedCart);
+                            localStorage.setItem("cart", JSON.stringify(updatedCart));
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="d-flex justify-content-between fw-bold">
+                    <span>Total:</span>
+                    <span>
+                      Rs.{" "}
+                      {cart.reduce((total, item) => total + item.food.price * item.qty, 0)}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
-            <button
-              className="btn btn-sm btn-danger"
-              onClick={() => {
-                const updatedCart = cart.filter((_, i) => i !== index);
-                setCart(updatedCart);
-                localStorage.setItem("cart", JSON.stringify(updatedCart));
-              }}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="d-flex justify-content-between fw-bold">
-        <span>Total:</span>
-        <span>
-          Rs.{" "}
-          {cart.reduce((total, item) => total + item.food.price * item.qty, 0)}
-        </span>
-      </div>
-    </>
-  )}
-</div>
-
-
             <div className="modal-footer">
               <button
                 className="btn btn-success w-100"
@@ -279,6 +345,12 @@ const FoodListPage = () => {
         show={showModal}
         onClose={() => setShowModal(false)}
         onConfirm={handleQuantityConfirm}
+      />
+
+      <OrderDetailsModal
+        show={orderDetailsModalShow}
+        onClose={() => setOrderDetailsModalShow(false)}
+        order={currentOrder}
       />
     </div>
   );
