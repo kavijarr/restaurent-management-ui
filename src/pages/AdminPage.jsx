@@ -8,7 +8,7 @@ const AdminPage = () => {
   const [orders, setOrders] = useState([]);
 
   const fetchOrders = () => {
-    axios.get("http://localhost:8080/api/order").then((res) => {
+    axios.get("http://192.168.1.112:8080/api/order").then((res) => {
       setOrders(res.data);
     });
   };
@@ -19,7 +19,7 @@ const AdminPage = () => {
 
   const handleTableCreate = async () => {
     try {
-      await axios.post("http://localhost:8080/api/tables", {
+      await axios.post("http://192.168.1.112:8080/api/tables", {
         name: tableName,
         qrCode,
       });
@@ -33,7 +33,7 @@ const AdminPage = () => {
 
   const handleCompleteOrder = async (orderId) => {
     try {
-      await axios.post(`http://localhost:8080/api/order/complete`, null, {
+      await axios.post(`http://192.168.1.112:8080/api/order/complete`, null, {
         params: { orderId },
       });
       alert("Order marked as complete");
